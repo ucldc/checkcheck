@@ -15,6 +15,7 @@ class CheckCheckException(Exception):
 logger = logging.getLogger(__name__)
 
 ENDPOINT_URL = None
+HASHNAME = None
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -38,6 +39,9 @@ def main(argv=None):
     if not isinstance(numeric_level, int):
         raise ValueError('Invalid log level: %s' % argv.loglevel)
     logging.basicConfig(level=numeric_level, )
+
+    global HASHNAME
+    HASHNAME = argv.hashname
 
     if os.path.isdir(argv.store):
         return check_path(argv.store)
@@ -86,13 +90,13 @@ def check_one(filename):
         s3 = boto3.resource('s3', endpoint_url=ENDPOINT_URL)
         obj = s3.Object(parts.netloc, parts.path.strip('/'))
         afile = obj.get()['Body']
-        seen_checksum = analyze_file(afile, 'md5')
+        seen_checksum = analyze_file(afile, HASHNAME)
     else:
         with open(filename, 'rb') as afile:
-            seen_checksum = analyze_file(afile, 'md5')
+            seen_checksum = analyze_file(afile, HASHNAME)
     if seen_checksum != checksum:
         raise CheckCheckException('file {} has {} of {}'.format(
-            checksum, 'md5', seen_checksum))
+            checksum, HASHNAME, seen_checksum))
 
 
 def try_one(filename):

@@ -5,12 +5,16 @@ import hashlib
 import os
 import logging
 import sys
+import boto3
+from urllib.parse import urlparse
 
 
 class CheckCheckException(Exception):
     """Raise for checksum errors"""
 
 logger = logging.getLogger(__name__)
+
+ENDPOINT_URL = None
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -39,24 +43,25 @@ def main(argv=None):
         return check_path(argv.store)
     elif os.path.isfile(argv.store):
         return check_one(argv.store)
-    elif argv.store.startswith('s3:/'):
-        import boto3
-        from boto3 import client
-        from urllib.parse import urlparse
+    elif argv.store.startswith('s3://'):
+        global ENDPOINT_URL
+        ENDPOINT_URL = argv.endpoint_url
         parts = urlparse(argv.store)
-        conn = client('s3', endpoint_url=argv.endpoint_url)
-        s3 = boto3.resource('s3', endpoint_url=argv.endpoint_url)
+        conn = boto3.client('s3', endpoint_url=ENDPOINT_URL)
         paginator = conn.get_paginator('list_objects_v2')
         response_iterator = paginator.paginate(
             Bucket=parts.netloc,
             Prefix=parts.path.strip('/'),
         )
+        exit_code = 0
         for page in response_iterator:
             for key in page['Contents']:
-                print(''.join(['s3://', parts.netloc, key['Key']]))
-                obj = s3.Object(parts.netloc, key['Key'])
-                afile = obj.get()['Body']
-                print(analyze_file(afile, 'md5'))
+                url = '/'.join(['s3:/', parts.netloc, key['Key']])
+                error = try_one(url)
+                if error:
+                    logger.error(error) 
+                    exit_code = 1
+        return exit_code
     else:
         parser.print_help()
         return 1
@@ -76,8 +81,15 @@ def analyze_file(afile, hashtype):
 def check_one(filename):
     """Check a file hash against the filename"""
     checksum = os.path.basename(filename)
-    with open(filename, 'rb') as afile:
+    if filename.startswith('s3://'):
+        parts = urlparse(filename)
+        s3 = boto3.resource('s3', endpoint_url=ENDPOINT_URL)
+        obj = s3.Object(parts.netloc, parts.path.strip('/'))
+        afile = obj.get()['Body']
         seen_checksum = analyze_file(afile, 'md5')
+    else:
+        with open(filename, 'rb') as afile:
+            seen_checksum = analyze_file(afile, 'md5')
     if seen_checksum != checksum:
         raise CheckCheckException('file {} has {} of {}'.format(
             checksum, 'md5', seen_checksum))
@@ -86,6 +98,7 @@ def check_one(filename):
 def try_one(filename):
     try:
         check_one(filename)
+        logger.info('{} checks out'.format(filename))
     except CheckCheckException as e:
         return e
 

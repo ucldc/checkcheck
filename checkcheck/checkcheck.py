@@ -12,10 +12,12 @@ from urllib.parse import urlparse
 class CheckCheckException(Exception):
     """Raise for checksum errors"""
 
+
 logger = logging.getLogger(__name__)
 
 ENDPOINT_URL = None
 HASHNAME = None
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -25,11 +27,15 @@ def main(argv=None):
 
     parser.add_argument('--loglevel', default='ERROR', required=False)
 
-    parser.add_argument('--endpoint_url', default=None, required=False, )
+    parser.add_argument(
+        '--endpoint_url',
+        default=None,
+        required=False, )
 
-    parser.add_argument('--hashname',
+    parser.add_argument(
+        '--hashname',
         default='md5',
-        choices=hashlib.algorithms_available,)
+        choices=hashlib.algorithms_available, )
 
     if argv is None:
         argv = parser.parse_args()
@@ -100,9 +106,9 @@ def check_path(path):
         for name in files:
             error = try_one(os.path.join(root, name))
             if error:
-                logger.error(error) 
+                logger.error(error)
                 exit_code = 1
-    return exit_code 
+    return exit_code
 
 
 def check_s3(path):
@@ -112,8 +118,7 @@ def check_s3(path):
     paginator = conn.get_paginator('list_objects_v2')
     response_iterator = paginator.paginate(
         Bucket=parts.netloc,
-        Prefix=parts.path.strip('/'),
-    )
+        Prefix=parts.path.strip('/'), )
     exit_code = 0
     for page in response_iterator:
         for key in page['Contents']:
@@ -127,8 +132,6 @@ def check_s3(path):
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
 """
 Copyright © 2016, Regents of the University of California
 All rights reserved.

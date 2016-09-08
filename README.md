@@ -24,12 +24,15 @@ optional arguments:
 
 ## Testing 
 
-To test with something such as `minio` or other S3 API...
+To test with something such as [`minio`](https://minio.io) or other S3 API...
 
 Set up another profile in `~/.aws/` ...
 
+Also, set a `--endpoint_url` command line paramater
+
 ```
 export AWS_PROFILE=...
+./checkcheck/checkcheck.py s3://repo-test/ --endpoint_url http://10.0.1.2:9000 --loglevel info
 ```
 
-Also, set a `--endpoint_url` command line paramater
+

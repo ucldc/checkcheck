@@ -50,22 +50,7 @@ def main(argv=None):
     elif argv.store.startswith('s3://'):
         global ENDPOINT_URL
         ENDPOINT_URL = argv.endpoint_url
-        parts = urlparse(argv.store)
-        conn = boto3.client('s3', endpoint_url=ENDPOINT_URL)
-        paginator = conn.get_paginator('list_objects_v2')
-        response_iterator = paginator.paginate(
-            Bucket=parts.netloc,
-            Prefix=parts.path.strip('/'),
-        )
-        exit_code = 0
-        for page in response_iterator:
-            for key in page['Contents']:
-                url = '/'.join(['s3:/', parts.netloc, key['Key']])
-                error = try_one(url)
-                if error:
-                    logger.error(error) 
-                    exit_code = 1
-        return exit_code
+        return check_s3(argv.store)
     else:
         parser.print_help()
         return 1
@@ -83,15 +68,15 @@ def analyze_file(afile, hashtype):
 
 
 def check_one(filename):
-    """Check a file hash against the filename"""
+    """Check a file or s3.Object hash against the filename"""
     checksum = os.path.basename(filename)
-    if filename.startswith('s3://'):
+    if filename.startswith('s3://'):  # s3
         parts = urlparse(filename)
         s3 = boto3.resource('s3', endpoint_url=ENDPOINT_URL)
         obj = s3.Object(parts.netloc, parts.path.strip('/'))
         afile = obj.get()['Body']
         seen_checksum = analyze_file(afile, HASHNAME)
-    else:
+    else:  # regular file
         with open(filename, 'rb') as afile:
             seen_checksum = analyze_file(afile, HASHNAME)
     if seen_checksum != checksum:
@@ -100,6 +85,7 @@ def check_one(filename):
 
 
 def try_one(filename):
+    """Try a filename, catch any exception"""
     try:
         check_one(filename)
         logger.info('{} checks out'.format(filename))
@@ -108,7 +94,7 @@ def try_one(filename):
 
 
 def check_path(path):
-    """Check a binary store"""
+    """Check all files in a directory"""
     exit_code = 0
     for root, ____, files, in os.walk(path):
         for name in files:
@@ -117,6 +103,26 @@ def check_path(path):
                 logger.error(error) 
                 exit_code = 1
     return exit_code 
+
+
+def check_s3(path):
+    """Check s3 path"""
+    parts = urlparse(path)
+    conn = boto3.client('s3', endpoint_url=ENDPOINT_URL)
+    paginator = conn.get_paginator('list_objects_v2')
+    response_iterator = paginator.paginate(
+        Bucket=parts.netloc,
+        Prefix=parts.path.strip('/'),
+    )
+    exit_code = 0
+    for page in response_iterator:
+        for key in page['Contents']:
+            url = '/'.join(['s3:/', parts.netloc, key['Key']])
+            error = try_one(url)
+            if error:
+                logger.error(error)
+                exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":

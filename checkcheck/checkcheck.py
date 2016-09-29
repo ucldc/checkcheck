@@ -7,6 +7,7 @@ import logging
 import sys
 import boto3
 from urllib.parse import urlparse
+from shannon import EntropyCounter
 
 
 class CheckCheckException(Exception):
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 ENDPOINT_URL = None
 HASHNAME = None
+
+total_bytes = 0
+total_info = 0.0
 
 
 def main(argv=None):
@@ -50,26 +54,38 @@ def main(argv=None):
     HASHNAME = argv.hashname
 
     if os.path.isdir(argv.store):
-        return check_path(argv.store)
+        ret = check_path(argv.store)
     elif os.path.isfile(argv.store):
-        return check_one(argv.store)
+        ret = check_one(argv.store)
     elif argv.store.startswith('s3://'):
         global ENDPOINT_URL
         ENDPOINT_URL = argv.endpoint_url
-        return check_s3(argv.store)
+        ret = check_s3(argv.store)
     else:
         parser.print_help()
         return 1
 
+    print('{} theoretical maximum compression {}'.format(
+        sizeof_fmt(total_bytes), sizeof_fmt(total_info)))
+
+    return ret
+
 
 def analyze_file(afile, hashtype):
     """Block through the file"""
+    # http://www.pythoncentral.io/hashing-files-with-python/
     hasher = hashlib.new(hashtype)
+    shannon = EntropyCounter()
     BLOCKSIZE = 1024 * hasher.block_size
     buf = afile.read(BLOCKSIZE)
     while len(buf) > 0:
+        shannon.update(buf)
         hasher.update(buf)
         buf = afile.read(BLOCKSIZE)
+    global total_bytes, total_info
+    total_bytes = total_bytes + shannon.byte_total
+    total_info = total_info + shannon.byte_total / 8 * shannon.entropy()
+    logger.debug(shannon)
     return hasher.hexdigest()
 
 
@@ -128,6 +144,16 @@ def check_s3(path):
                 logger.error(error)
                 exit_code = 1
     return exit_code
+
+
+def sizeof_fmt(num, suffix='B'):
+    # http://stackoverflow.com/a/1094933/1763984
+    # by Fred Cirera
+    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
 
 
 if __name__ == "__main__":
